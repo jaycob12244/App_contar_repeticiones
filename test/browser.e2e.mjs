@@ -141,6 +141,23 @@ async function addSeries(page, reps, intensifiers = false) {
   await dialog.getByRole('button', { name: 'Guardar serie' }).click();
 }
 
+async function swipeLeft(page, target, distance) {
+  const bounds = await target.boundingBox();
+  if (!bounds) throw new Error('No se encontró la tarjeta para deslizar.');
+  const x = Math.round(bounds.x + bounds.width * .8);
+  const y = Math.round(bounds.y + bounds.height / 2);
+  const touch = await page.context().newCDPSession(page);
+  try {
+    await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
+    for (const fraction of [.2, .5, 1]) {
+      await touch.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x - distance * fraction, y }] });
+    }
+    await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  } finally {
+    await touch.detach();
+  }
+}
+
 try {
   const vite = spawnSync(process.execPath, ['node_modules/vite/bin/vite.js', 'build', '--outDir', root], {
     env: { ...process.env, VITE_SUPABASE_URL: base, VITE_SUPABASE_PUBLISHABLE_KEY: 'browser-test-key' },
@@ -227,10 +244,17 @@ try {
   await page.getByRole('button', { name: 'Finalizar entrenamiento' }).click();
   await expect.poll(() => workouts.size).toBe(3);
   expect(routines.size).toBe(0);
-  await page.getByRole('article').filter({ hasText: '1 series' }).getByRole('button', { name: /^Eliminar entrenamiento de Espalda/ }).click();
-  await page.getByRole('dialog').getByRole('button', { name: 'Eliminar entrenamiento' }).click();
+  const oneSeries = page.getByRole('article').filter({ hasText: '1 series' });
+  const workoutCard = oneSeries.getByRole('button', { name: /Espalda.*1 series/ });
+  await swipeLeft(page, workoutCard, 35);
+  await expect(oneSeries).toBeVisible();
+  await workoutCard.tap();
+  await expect(page.getByRole('heading', { name: 'Jalón al pecho' })).toBeVisible();
+  await page.getByRole('button', { name: 'Volver al historial' }).click();
+  await swipeLeft(page, workoutCard, 125);
   await expect.poll(() => workouts.size).toBe(2);
-  await expect(page.getByRole('article').filter({ hasText: '1 series' })).toHaveCount(0);
+  await expect(oneSeries).toHaveCount(0);
+  await expect(page.getByRole('dialog')).toHaveCount(0);
 
   await page.getByRole('button', { name: 'Historial', exact: true }).click();
   await page.getByRole('button', { name: /Espalda.*3 series/ }).first().click();

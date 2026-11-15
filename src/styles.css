@@ -115,7 +115,21 @@ button svg { flex: none; }
   text-align: left;
 }
 .list-button strong, .catalog-item strong { display: block; margin-bottom: 4px; }
-.history-row { display: flex; align-items: center; gap: 8px; padding: 10px; }
+.history-card { position: relative; overflow: hidden; border-radius: 17px; touch-action: pan-y pinch-zoom; user-select: none; }
+.history-swipe-action {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-right: 16px;
+  background: var(--primary);
+  color: var(--on-primary);
+  font-weight: 650;
+}
+.history-row { position: relative; display: flex; align-items: center; gap: 8px; padding: 10px; transition: transform 150ms ease-out; }
+.history-row-dragging { transition: none; }
 .history-open {
   flex: 1;
   min-width: 0;

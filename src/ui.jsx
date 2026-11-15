@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   ArrowRight, CalendarDays, ChevronRight, ClipboardList, Copy, Dumbbell,
   History, Link, LogOut, Plus, RotateCcw, Trash2, TrendingUp,
@@ -14,7 +14,83 @@ const exerciseName = (catalog, id) => catalog.find(exercise => exercise.id === i
 const totalSets = workout => workout.exercises.reduce((total, entry) => total + entry.sets.length, 0);
 const newestFirst = (a, b) => Date.parse(b.completed_at) - Date.parse(a.completed_at);
 
-function HistoryView({ workouts, catalog, selected, onSelect, onSaveRoutine, onDelete }) {
+const swipeDeleteDistance = 100;
+
+function HistoryWorkoutRow({ workout, onSelect, onDelete, onSwipeDelete }) {
+  const gesture = useRef(null);
+  const suppressClick = useRef(false);
+  const [offset, setOffset] = useState(0);
+  const group = workout.groups.join(' · ');
+  const date = dateLabel(workout.completed_at);
+
+  function startSwipe(event) {
+    if (!event.isPrimary || event.button !== 0) return;
+    suppressClick.current = false;
+    gesture.current = { id: event.pointerId, x: event.clientX, y: event.clientY, axis: null };
+  }
+
+  function moveSwipe(event) {
+    const start = gesture.current;
+    if (!start || start.id !== event.pointerId) return;
+    const left = start.x - event.clientX;
+    const vertical = Math.abs(event.clientY - start.y);
+    if (!start.axis && Math.max(Math.abs(left), vertical) >= 8) {
+      start.axis = Math.abs(left) > vertical ? 'horizontal' : 'vertical';
+      if (start.axis === 'horizontal') {
+        suppressClick.current = true;
+        event.currentTarget.setPointerCapture(event.pointerId);
+      }
+    }
+    if (start.axis === 'horizontal') setOffset(Math.max(0, Math.min(left, 136)));
+  }
+
+  function resetSwipe() {
+    gesture.current = null;
+    setOffset(0);
+  }
+
+  function finishSwipe(event) {
+    const start = gesture.current;
+    if (!start || start.id !== event.pointerId) return;
+    resetSwipe();
+    const left = start.x - event.clientX;
+    const vertical = Math.abs(event.clientY - start.y);
+    if (start.axis === 'horizontal' && left >= swipeDeleteDistance && left >= vertical * 1.5) {
+      onSwipeDelete(workout.id);
+    } else if (!start.axis && Math.abs(left) < 8 && vertical < 8 && event.pointerType === 'touch'
+      && event.target.closest('.history-open')) {
+      suppressClick.current = true;
+      onSelect(workout.id);
+    }
+  }
+
+  return (
+    <article className="history-card" onPointerDown={startSwipe} onPointerMove={moveSwipe}
+      onPointerUp={finishSwipe} onPointerCancel={resetSwipe} onLostPointerCapture={event => {
+        if (event.target === event.currentTarget && gesture.current?.id === event.pointerId) resetSwipe();
+      }}
+      onClickCapture={event => {
+        if (!suppressClick.current || event.detail === 0) return;
+        suppressClick.current = false;
+        event.stopPropagation();
+      }}>
+      <div className="history-swipe-action" aria-hidden="true"><Trash2 size={17} /> Eliminar</div>
+      <div className={offset ? 'card history-row history-row-dragging' : 'card history-row'}
+        style={offset ? { transform: `translateX(-${offset}px)` } : undefined}>
+        <button className="list-button history-open" onClick={() => onSelect(workout.id)}>
+          <span><strong>{group}</strong><small>{date} · {totalSets(workout)} series</small></span>
+          <ChevronRight size={20} />
+        </button>
+        <button className="secondary compact" onClick={() => onDelete(workout)}
+          aria-label={`Eliminar entrenamiento de ${group} del ${date}`}>
+          <Trash2 size={16} /> Eliminar
+        </button>
+      </div>
+    </article>
+  );
+}
+
+function HistoryView({ workouts, catalog, selected, onSelect, onSaveRoutine, onDelete, onSwipeDelete }) {
   if (selected) {
     return (
       <section className="stack">
@@ -36,16 +112,8 @@ function HistoryView({ workouts, catalog, selected, onSelect, onSaveRoutine, onD
       <div className="page-title"><h1>Historial</h1></div>
       {!workouts.length && <div className="card empty"><CalendarDays size={24} /><p>Aquí aparecerán tus entrenamientos finalizados.</p></div>}
       {workouts.map(workout => (
-        <article key={workout.id} className="card history-row">
-          <button className="list-button history-open" onClick={() => onSelect(workout.id)}>
-            <span><strong>{workout.groups.join(' · ')}</strong><small>{dateLabel(workout.completed_at)} · {totalSets(workout)} series</small></span>
-            <ChevronRight size={20} />
-          </button>
-          <button className="secondary compact" onClick={() => onDelete(workout)}
-            aria-label={`Eliminar entrenamiento de ${workout.groups.join(' · ')} del ${dateLabel(workout.completed_at)}`}>
-            <Trash2 size={16} /> Eliminar
-          </button>
-        </article>
+        <HistoryWorkoutRow key={workout.id} workout={workout} onSelect={onSelect}
+          onDelete={onDelete} onSwipeDelete={onSwipeDelete} />
       ))}
     </section>
   );
@@ -225,8 +293,7 @@ export function TrainingApp({ profile, sessionReady, onAccessDenied, onLogout })
     }
   }
 
-  function confirmDeletion() {
-    const { type, id } = modal.target;
+  function deleteRecord(type, id) {
     if (!apply(current => removeOwnedRecord(current, type, id))) return;
     if (type === 'workout') setChosenWorkout(null);
     setMessage(type === 'workout' ? 'Entrenamiento eliminado.' : 'Rutina eliminada.');
@@ -334,6 +401,7 @@ export function TrainingApp({ profile, sessionReady, onAccessDenied, onLogout })
         {tab === 'history' && <HistoryView workouts={workouts} catalog={catalog}
           selected={workouts.find(workout => workout.id === chosenWorkout)} onSelect={setChosenWorkout}
           onSaveRoutine={source => setModal({ type: 'routine', source })}
+          onSwipeDelete={id => deleteRecord('workout', id)}
           onDelete={workout => setModal({ type: 'delete', target: { type: 'workout', id: workout.id } })} />}
         {tab === 'progress' && <ProgressView workouts={workouts} catalog={catalog} />}
         {tab === 'routines' && <section className="stack">
@@ -387,7 +455,7 @@ export function TrainingApp({ profile, sessionReady, onAccessDenied, onLogout })
               : `Se quitará «${modal.target.name}» de tus rutinas.`}</p>
             <div className="actions">
               <button className="secondary" onClick={close}>Cancelar</button>
-              <button className="primary" onClick={confirmDeletion}>{modal.target.type === 'workout' ? 'Eliminar entrenamiento' : 'Eliminar rutina'}</button>
+              <button className="primary" onClick={() => deleteRecord(modal.target.type, modal.target.id)}>{modal.target.type === 'workout' ? 'Eliminar entrenamiento' : 'Eliminar rutina'}</button>
             </div>
           </div>
         </Modal>
