@@ -49,6 +49,7 @@ button svg { flex: none; }
 .header-inner, .page, .bottom-nav > div { width: min(100%, 720px); margin-inline: auto; }
 .header-inner { height: var(--header-size); display: flex; justify-content: space-between; align-items: center; padding-inline: 20px; }
 .brand { display: flex; align-items: center; gap: 9px; font-size: 1.2rem; font-weight: 760; letter-spacing: -.05em; }
+.release-check { font-size: .75rem; font-weight: 650; letter-spacing: 0; }
 .brand-icon { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 12px; background: var(--primary); color: var(--on-primary); }
 .page { padding: 16px 20px calc(var(--nav-size) + env(safe-area-inset-bottom) + 28px); }
 .page-title { padding-block: 8px 5px; }
