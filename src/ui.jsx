@@ -206,7 +206,7 @@ export function TrainingApp({ profile, sessionReady, onAccessDenied, onLogout })
       return enqueue({ ...current, draft: null, workouts: replaceRecord(current.workouts, workout) }, 'workout', workout);
     });
     if (!saved) return;
-    setChosenWorkout(draft.id);
+    setChosenWorkout(null);
     setTab('history');
   }
 

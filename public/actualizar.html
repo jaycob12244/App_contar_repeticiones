@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#f7f7f5">
+    <title>Actualizar Entreno</title>
+    <style>
+      body { margin: 0; padding: 24px; background: #f7f7f5; color: #171717; font: 1rem/1.5 system-ui, sans-serif; }
+      main { box-sizing: border-box; max-width: 460px; margin: 10vh auto 0; padding: 22px; background: white; border: 1px solid #deded9; border-radius: 18px; }
+      h1 { margin: 0; font-size: 1.75rem; line-height: 1.2; }
+      p { margin: 12px 0; }
+      button { width: 100%; min-height: 46px; padding: 10px; border: 0; border-radius: 12px; background: #181818; color: white; font: inherit; font-weight: 650; cursor: pointer; }
+      a { color: inherit; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Actualizar Entreno</h1>
+      <p>Renueva la versión de la app en este navegador. Se conservan tu sesión y tus entrenamientos guardados.</p>
+      <button type="button" id="update">Actualizar y abrir Historial</button>
+      <p id="feedback" role="status" hidden>No se pudo renovar la app. Revisa la conexión e inténtalo de nuevo.</p>
+      <noscript><p>Activa JavaScript para actualizar la aplicación.</p></noscript>
+    </main>
+    <script>
+      const button = document.getElementById('update');
+      const feedback = document.getElementById('feedback');
+      button.addEventListener('click', async () => {
+        button.disabled = true;
+        feedback.hidden = true;
+        try {
+          if ('serviceWorker' in navigator) {
+            const registration = await navigator.serviceWorker.getRegistration('/');
+            if (registration?.scope === new URL('/', location.origin).href) await registration.unregister();
+          }
+          location.replace('/historial');
+        } catch {
+          feedback.hidden = false;
+          button.disabled = false;
+        }
+      });
+    </script>
+  </body>
+</html>

@@ -6,7 +6,7 @@ import { pathToFileURL } from 'node:url';
 const directory = pathToFileURL(resolve(process.argv[2] || 'dist') + sep);
 const paths = (await readdir(directory, { recursive: true }))
   .map(path => path.replaceAll('\\', '/'))
-  .filter(path => /\.(html|js|css|webmanifest|png)$/.test(path) && path !== 'sw.js')
+  .filter(path => /\.(html|js|css|webmanifest|png)$/.test(path) && !['sw.js', 'actualizar.html'].includes(path))
   .sort();
 if (!paths.includes('index.html')) throw new Error('No se encontró la salida de Vite.');
 

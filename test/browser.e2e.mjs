@@ -168,6 +168,9 @@ try {
   await addSeries(page, 9);
   await addSeries(page, 8);
   await page.getByRole('button', { name: 'Finalizar entrenamiento' }).click();
+  await expect(page.getByRole('heading', { name: 'Historial' })).toBeVisible();
+  await expect(page.getByRole('button', { name: /^Eliminar entrenamiento de Espalda/ })).toBeVisible();
+  await page.getByRole('button', { name: /Espalda.*3 series/ }).first().click();
   await expect(page.getByText('Rest-pause · 2 rep')).toBeVisible();
   await expect.poll(() => workouts.size).toBe(1);
 
@@ -184,7 +187,10 @@ try {
       document.documentElement.dataset.workerUpdated = 'true';
     });
   });
-  await legacyPage.goto(base + '/historial');
+  await legacyPage.goto(base + '/actualizar');
+  await expect(legacyPage.getByRole('heading', { name: 'Actualizar Entreno' })).toBeVisible();
+  await legacyPage.getByRole('button', { name: 'Actualizar y abrir Historial' }).click();
+  await expect(legacyPage).toHaveURL(base + '/historial');
   await expect(legacyPage.getByRole('heading', { name: 'Historial' })).toBeVisible();
   await expect(legacyPage.getByRole('button', { name: /^Eliminar entrenamiento de Espalda/ })).toBeVisible();
   await expect(legacyPage.locator('html')).toHaveAttribute('data-worker-updated', 'true', { timeout: 10000 });
@@ -211,6 +217,20 @@ try {
   await context.setOffline(false);
   await expect.poll(() => workouts.size).toBe(2);
   await expect(page.getByText('Sincronizado', { exact: true })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Entrenar', exact: true }).click();
+  await page.getByRole('button', { name: 'Nuevo entrenamiento' }).click();
+  await page.getByRole('button', { name: 'Espalda', exact: true }).click();
+  await page.getByRole('button', { name: 'Elegir ejercicios' }).click();
+  await page.getByRole('button', { name: /Jalón al pecho/ }).click();
+  await addSeries(page, 12);
+  await page.getByRole('button', { name: 'Finalizar entrenamiento' }).click();
+  await expect.poll(() => workouts.size).toBe(3);
+  expect(routines.size).toBe(0);
+  await page.getByRole('article').filter({ hasText: '1 series' }).getByRole('button', { name: /^Eliminar entrenamiento de Espalda/ }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Eliminar entrenamiento' }).click();
+  await expect.poll(() => workouts.size).toBe(2);
+  await expect(page.getByRole('article').filter({ hasText: '1 series' })).toHaveCount(0);
 
   await page.getByRole('button', { name: 'Historial', exact: true }).click();
   await page.getByRole('button', { name: /Espalda.*3 series/ }).first().click();
