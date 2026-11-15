@@ -29,10 +29,28 @@ async function readBody(request) {
 }
 
 const root = resolve('.browser-dist');
+const { rewrites = [] } = JSON.parse(await readFile('vercel.json', 'utf8'));
 const server = createServer(async (request, response) => {
   const url = new URL(request.url, 'http://localhost');
   const { pathname } = url;
   try {
+    if (pathname === '/legacy-install') {
+      response.writeHead(200, { 'content-type': 'text/html' });
+      response.end('<script>navigator.serviceWorker.register("/sw.js")</script>');
+      return;
+    }
+    if (pathname === '/sw.js' && request.headers.cookie?.includes('legacy_worker=1')) {
+      response.writeHead(200, { 'content-type': 'application/javascript' });
+      response.end(`
+        self.addEventListener('install', event => event.waitUntil(self.skipWaiting()));
+        self.addEventListener('activate', event => event.waitUntil(self.clients.claim()));
+        self.addEventListener('fetch', event => {
+          if (event.request.mode !== 'navigate' || new URL(event.request.url).pathname !== '/') return;
+          event.respondWith(new Response('<title>Entreno anterior</title>', { headers: { 'content-type': 'text/html' } }));
+        });
+      `);
+      return;
+    }
     if (pathname === '/auth/v1/token') {
       const { email, refresh_token } = await readBody(request);
       const refreshing = url.searchParams.get('grant_type') === 'refresh_token';
@@ -77,7 +95,8 @@ const server = createServer(async (request, response) => {
       return;
     }
     if (table) return json(response, [...table.values()].filter(row => row.owner_id === owner));
-    const path = resolve(root, '.', pathname === '/' ? 'index.html' : '.' + pathname);
+    const destination = rewrites.find(rewrite => rewrite.source === pathname)?.destination || pathname;
+    const path = resolve(root, '.', destination === '/' ? 'index.html' : '.' + destination);
     if (!path.startsWith(root + sep)) return json(response, null, 404);
     const contents = await readFile(path);
     const type = { '.html': 'text/html', '.js': 'application/javascript', '.css': 'text/css', '.png': 'image/png', '.webmanifest': 'application/manifest+json' };
@@ -152,6 +171,27 @@ try {
   await expect(page.getByText('Rest-pause · 2 rep')).toBeVisible();
   await expect.poll(() => workouts.size).toBe(1);
 
+  const legacy = await browser.newContext({ storageState: await context.storageState() });
+  await legacy.addCookies([{ name: 'legacy_worker', value: '1', url: base }]);
+  const legacyPage = await legacy.newPage();
+  await legacyPage.goto(base + '/legacy-install');
+  await expect.poll(() => legacyPage.evaluate(() => Boolean(navigator.serviceWorker.controller))).toBe(true);
+  await legacyPage.goto(base);
+  await expect(legacyPage).toHaveTitle('Entreno anterior');
+  await legacy.clearCookies({ name: 'legacy_worker' });
+  await legacyPage.addInitScript(() => {
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      document.documentElement.dataset.workerUpdated = 'true';
+    });
+  });
+  await legacyPage.goto(base + '/historial');
+  await expect(legacyPage.getByRole('heading', { name: 'Historial' })).toBeVisible();
+  await expect(legacyPage.getByRole('button', { name: /^Eliminar entrenamiento de Espalda/ })).toBeVisible();
+  await expect(legacyPage.locator('html')).toHaveAttribute('data-worker-updated', 'true', { timeout: 10000 });
+  await legacyPage.goto(base);
+  await expect(legacyPage).toHaveTitle('Entreno');
+  await legacy.close();
+
   await page.close();
   await context.setOffline(true);
   page = await context.newPage();
@@ -188,8 +228,8 @@ try {
   await receiver.close();
 
   await context.setOffline(true);
-  await page.goto(base);
-  await page.getByRole('button', { name: 'Historial', exact: true }).click();
+  await page.goto(base + '/historial');
+  await expect(page.getByRole('heading', { name: 'Historial' })).toBeVisible();
   await page.getByRole('button', { name: /Espalda.*3 series/ }).first().click();
   await page.getByRole('button', { name: 'Eliminar entrenamiento' }).click();
   await page.getByRole('button', { name: 'Cancelar' }).click();

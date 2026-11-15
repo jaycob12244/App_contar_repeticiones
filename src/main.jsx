@@ -240,5 +240,8 @@ createRoot(document.getElementById('root')).render(<App />);
 
 if (import.meta.env.PROD && 'serviceWorker' in navigator) {
   navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' })
+    .then(registration => {
+      if (window.location.pathname === '/historial' && navigator.onLine) return registration.update();
+    })
     .catch(error => console.error('No se pudo preparar la caché sin conexión.', error));
 }

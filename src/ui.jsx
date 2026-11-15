@@ -114,7 +114,7 @@ const tabs = [
 
 export function TrainingApp({ profile, sessionReady, onAccessDenied, onLogout }) {
   const { data, update, sync, syncing, syncError, online } = useLocalData(profile.id, sessionReady, onAccessDenied);
-  const [tab, setTab] = useState('train');
+  const [tab, setTab] = useState(() => window.location.pathname === '/historial' ? 'history' : 'train');
   const [modal, setModal] = useState(null);
   const [groups, setGroups] = useState([]);
   const [chosenWorkout, setChosenWorkout] = useState(null);

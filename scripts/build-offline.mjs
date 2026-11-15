@@ -16,6 +16,7 @@ const cache = `entreno-shell-${hash.digest('hex').slice(0, 16)}`;
 await writeFile(new URL('sw.js', directory), `
 const CACHE = ${JSON.stringify(cache)};
 const FILES = ${JSON.stringify(paths.map(path => '/' + path))};
+const APP_PAGES = ['/', '/index.html', '/historial'];
 
 async function openApp(request) {
   const controller = new AbortController();
@@ -43,7 +44,7 @@ self.addEventListener('activate', event => {
 self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
   if (event.request.method !== 'GET' || url.origin !== self.location.origin) return;
-  if (event.request.mode === 'navigate' && (url.pathname === '/' || url.pathname === '/index.html')) {
+  if (event.request.mode === 'navigate' && APP_PAGES.includes(url.pathname)) {
     event.respondWith(openApp(event.request));
     return;
   }
