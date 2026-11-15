@@ -264,7 +264,7 @@ export function TrainingApp({ profile, sessionReady, onAccessDenied, onLogout })
           <div role="status">
             <p className="sync-label">
               <span className={connected && !syncError ? 'status-dot connected' : 'status-dot'} />
-              {!online ? 'Sin conexión' : syncing ? 'Sincronizando…' : syncError ? 'Sincronización pendiente' : !sessionReady ? 'Conexión pendiente' : pending ? `${pending} por sincronizar` : 'Sincronizado'}
+              {!online ? 'Sin conexión' : syncing ? 'Sincronizando…' : syncError ? 'Sincronización pendiente' : !sessionReady ? 'Sesión guardada · esperando conexión' : pending ? `${pending} por sincronizar` : 'Sincronizado'}
             </p>
             {(!connected || syncError) && pending > 0 && <small>{pending} por sincronizar · guardado en este teléfono</small>}
           </div>

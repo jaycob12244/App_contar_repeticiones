@@ -13,6 +13,8 @@ const profiles = {
 const routines = new Map();
 const workouts = new Map();
 let shared;
+let authUnavailable = false;
+let refreshes = 0;
 
 function json(response, value, status = 200) {
   response.writeHead(status, { 'content-type': 'application/json' });
@@ -31,13 +33,17 @@ const server = createServer(async (request, response) => {
   const { pathname } = url;
   try {
     if (pathname === '/auth/v1/token') {
-      const { email } = await readBody(request);
-      const user = profiles[email];
+      const { email, refresh_token } = await readBody(request);
+      const refreshing = url.searchParams.get('grant_type') === 'refresh_token';
+      if (refreshing && authUnavailable) return json(response, { message: 'Temporary Auth outage' }, 503);
+      const user = refreshing ? Object.values(profiles).find(profile => profile.id === refresh_token) : profiles[email];
       if (!user) return json(response, { message: 'invalid_credentials' }, 400);
+      if (refreshing) refreshes += 1;
       const claims = { sub: user.id, role: 'authenticated', exp: Math.floor(Date.now() / 1000) + 3600 };
       const access_token = ['eyJhbGciOiJIUzI1NiJ9', Buffer.from(JSON.stringify(claims)).toString('base64url'), 'fake'].join('.');
       return json(response, { access_token, refresh_token: user.id, expires_in: 3600, token_type: 'bearer', user });
     }
+    if (pathname === '/auth/v1/logout') return json(response, {});
     if (pathname === '/rest/v1/rpc/app_allowed') return json(response, true);
     if (pathname === '/rest/v1/exercises') return json(response, [exercise]);
     if (pathname === '/rest/v1/rpc/share_routine') {
@@ -166,7 +172,35 @@ try {
   await expect(receiver.getByRole('heading', { name: 'Espalda de Ana' })).toBeVisible();
   await receiver.getByRole('button', { name: 'Historial', exact: true }).click();
   await expect(receiver.getByText('Aquí aparecerán tus entrenamientos finalizados.')).toBeVisible();
-  console.log('OK: registro móvil, sincronización, reapertura sin conexión, comparación y rutina compartida.');
+  await receiver.close();
+
+  const saved = await context.storageState();
+  const session = saved.origins.flatMap(origin => origin.localStorage).find(entry => /^sb-.*-auth-token$/.test(entry.name));
+  const expired = { ...JSON.parse(session.value), expires_at: Math.floor(Date.now() / 1000) - 60 };
+  session.value = JSON.stringify(expired);
+  const restarted = await browser.newContext({ storageState: saved });
+  const restored = await restarted.newPage();
+  authUnavailable = true;
+  const refreshFailed = restored.waitForEvent('console', {
+    predicate: message => message.type() === 'warning' && message.text().includes('AuthRetryableFetchError'),
+    timeout: 45000,
+  });
+  await restored.goto(base);
+  await refreshFailed;
+  // Wait for React to apply the initial auth result before verifying the cached view.
+  await expect(restored.getByText('Sesión guardada · esperando conexión')).toBeVisible();
+  await expect(restored.getByRole('navigation')).toBeVisible();
+  await restored.close();
+  authUnavailable = false;
+  const reopened = await restarted.newPage();
+  await reopened.goto(base);
+  await expect(reopened.getByText('Sincronizado', { exact: true })).toBeVisible();
+  expect(refreshes).toBeGreaterThan(0);
+  await reopened.getByRole('button', { name: 'Ana', exact: true }).click();
+  await reopened.getByRole('button', { name: 'Cerrar sesión' }).click();
+  await reopened.reload();
+  await expect(reopened.getByRole('heading', { name: 'Inicia sesión' })).toBeVisible();
+  console.log('OK: registro, modo sin conexión, rutinas compartidas, recuperación de sesión y cierre de sesión.');
 } finally {
   await browser?.close();
   server.closeAllConnections();

@@ -2,7 +2,21 @@ import { createClient } from '@supabase/supabase-js';
 
 const url = import.meta.env.VITE_SUPABASE_URL;
 const key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
-export const supabase = url && key ? createClient(url, key) : null;
+// Keep the SDK's existing key so installed copies retain their saved session.
+const storageKey = url && `sb-${new URL(url).hostname.split('.')[0]}-auth-token`;
+export const supabase = url && key ? createClient(url, key, {
+  auth: { persistSession: true, autoRefreshToken: true, storageKey },
+}) : null;
+
+export function hasSavedSession(userId) {
+  if (!userId || !storageKey) return false;
+  try {
+    const session = JSON.parse(localStorage.getItem(storageKey));
+    return session?.user?.id === userId && Boolean(session.refresh_token);
+  } catch {
+    return false;
+  }
+}
 
 export function apiForSession(session) {
   return createClient(url, key, { accessToken: async () => session.access_token });

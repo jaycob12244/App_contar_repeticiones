@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Dumbbell, Moon, Sun } from 'lucide-react';
-import { allowed, apiForSession, supabase } from './backend.js';
+import { allowed, apiForSession, hasSavedSession, supabase } from './backend.js';
 import { TrainingApp } from './ui.jsx';
 import './styles.css';
 
@@ -9,7 +9,8 @@ const profileKey = 'entreno:last-account';
 
 function cachedProfile() {
   try {
-    return JSON.parse(localStorage.getItem(profileKey));
+    const profile = JSON.parse(localStorage.getItem(profileKey));
+    return hasSavedSession(profile?.id) ? profile : null;
   } catch {
     return null;
   }
@@ -166,8 +167,10 @@ function App() {
       setVerifiedSession(false);
       const stored = cachedProfile();
       if (!session) {
-        setProfile(!navigator.onLine ? stored : null);
-        setStatus('ready');
+        // INITIAL_SESSION also returns null when refresh fails temporarily.
+        // The SDK keeps the saved session in storage in that case.
+        setProfile(stored);
+        setStatus(stored ? 'network' : 'ready');
         return;
       }
       if (!navigator.onLine) {
@@ -193,7 +196,12 @@ function App() {
         setStatus('network');
       }
     }
-    const reconnect = () => void verify();
+    async function reconnect() {
+      const { data } = await supabase.auth.getSession();
+      if (!current) return;
+      authId.current = data.session?.user.id ?? null;
+      setAuth({ session: data.session });
+    }
     void verify();
     window.addEventListener('online', reconnect);
     return () => {
