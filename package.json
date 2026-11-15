@@ -1,0 +1,23 @@
+{
+  "name": "registro-de-entrenamiento",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build && node scripts/build-offline.mjs",
+    "preview": "vite preview",
+    "test": "node --test test/*.test.js",
+    "test:browser": "node test/browser.e2e.mjs"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "2.119.0",
+    "lucide-react": "1.73.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.5.16",
+    "@playwright/test": "1.65.1",
+    "vite": "8.3.8"
+  }
+}
