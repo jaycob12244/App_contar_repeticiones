@@ -15,6 +15,7 @@ const workouts = new Map();
 let shared;
 let authUnavailable = false;
 let refreshes = 0;
+let updatedShell = false;
 
 function json(response, value, status = 200) {
   response.writeHead(status, { 'content-type': 'application/json' });
@@ -81,7 +82,9 @@ const server = createServer(async (request, response) => {
     const contents = await readFile(path);
     const type = { '.html': 'text/html', '.js': 'application/javascript', '.css': 'text/css', '.png': 'image/png', '.webmanifest': 'application/manifest+json' };
     response.writeHead(200, { 'content-type': type[path.slice(path.lastIndexOf('.'))] || 'text/plain' });
-    response.end(contents);
+    response.end(updatedShell && pathname === '/'
+      ? contents.toString().replace('<title>Entreno</title>', '<title>Entreno actualizado</title>')
+      : contents);
   } catch (error) {
     json(response, { error: error.message }, 500);
   }
@@ -132,6 +135,10 @@ try {
   await signIn(page, 'ana@example.com');
   await page.evaluate(() => navigator.serviceWorker.ready.then(() => true));
   await expect.poll(async () => page.evaluate(() => Boolean(navigator.serviceWorker.controller))).toBe(true);
+  updatedShell = true;
+  await page.reload();
+  await expect(page).toHaveTitle('Entreno actualizado');
+  updatedShell = false;
   await page.getByRole('button', { name: 'Activar modo oscuro' }).click();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   await page.getByRole('button', { name: 'Nuevo entrenamiento' }).click();
@@ -187,7 +194,8 @@ try {
   await page.getByRole('button', { name: 'Eliminar entrenamiento' }).click();
   await page.getByRole('button', { name: 'Cancelar' }).click();
   await expect(page.getByRole('heading', { name: 'Jalón al pecho' })).toBeVisible();
-  await page.getByRole('button', { name: 'Eliminar entrenamiento' }).click();
+  await page.getByRole('button', { name: 'Volver al historial' }).click();
+  await page.getByRole('button', { name: /^Eliminar entrenamiento de Espalda/ }).first().click();
   await page.getByRole('dialog').getByRole('button', { name: 'Eliminar entrenamiento' }).click();
   await page.getByRole('button', { name: 'Rutinas', exact: true }).click();
   await page.getByRole('button', { name: 'Eliminar Espalda de Ana' }).click();

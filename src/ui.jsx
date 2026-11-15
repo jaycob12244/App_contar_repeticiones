@@ -20,12 +20,14 @@ function HistoryView({ workouts, catalog, selected, onSelect, onSaveRoutine, onD
       <section className="stack">
         <button className="text-button align-start" onClick={() => onSelect(null)}>← Volver al historial</button>
         <div className="page-title"><h1>{selected.groups.join(' · ')}</h1><p>{dateLabel(selected.completed_at)} · {totalSets(selected)} series</p></div>
+        <div className="actions">
+          <button className="secondary compact" onClick={() => onSaveRoutine(selected)}><ClipboardList size={18} /> Guardar como rutina</button>
+          <button className="secondary compact" onClick={() => onDelete(selected)}><Trash2 size={17} /> Eliminar entrenamiento</button>
+        </div>
         {selected.exercises.map(entry => <article className="card" key={entry.exerciseId}>
           <h2>{exerciseName(catalog, entry.exerciseId)}</h2>
           <Sets sets={entry.sets} />
         </article>)}
-        <button className="secondary" onClick={() => onSaveRoutine(selected)}><ClipboardList size={18} /> Guardar como rutina</button>
-        <button className="text-button" onClick={() => onDelete(selected)}>Eliminar entrenamiento</button>
       </section>
     );
   }
@@ -34,10 +36,16 @@ function HistoryView({ workouts, catalog, selected, onSelect, onSaveRoutine, onD
       <div className="page-title"><h1>Historial</h1></div>
       {!workouts.length && <div className="card empty"><CalendarDays size={24} /><p>Aquí aparecerán tus entrenamientos finalizados.</p></div>}
       {workouts.map(workout => (
-        <button key={workout.id} className="card list-button" onClick={() => onSelect(workout.id)}>
-          <span><strong>{workout.groups.join(' · ')}</strong><small>{dateLabel(workout.completed_at)} · {totalSets(workout)} series</small></span>
-          <ChevronRight size={20} />
-        </button>
+        <article key={workout.id} className="card history-row">
+          <button className="list-button history-open" onClick={() => onSelect(workout.id)}>
+            <span><strong>{workout.groups.join(' · ')}</strong><small>{dateLabel(workout.completed_at)} · {totalSets(workout)} series</small></span>
+            <ChevronRight size={20} />
+          </button>
+          <button className="secondary compact" onClick={() => onDelete(workout)}
+            aria-label={`Eliminar entrenamiento de ${workout.groups.join(' · ')} del ${dateLabel(workout.completed_at)}`}>
+            <Trash2 size={16} /> Eliminar
+          </button>
+        </article>
       ))}
     </section>
   );

@@ -16,6 +16,22 @@ const cache = `entreno-shell-${hash.digest('hex').slice(0, 16)}`;
 await writeFile(new URL('sw.js', directory), `
 const CACHE = ${JSON.stringify(cache)};
 const FILES = ${JSON.stringify(paths.map(path => '/' + path))};
+
+async function openApp(request) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 3000);
+  let response;
+  try {
+    response = await fetch(request, { cache: 'no-cache', signal: controller.signal });
+    if (response.ok) return response;
+  } catch {
+    // The installed shell is still available offline.
+  } finally {
+    clearTimeout(timeout);
+  }
+  return await caches.match('/index.html', { cacheName: CACHE }) || response || Response.error();
+}
+
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(FILES)).then(() => self.skipWaiting()));
 });
@@ -27,8 +43,11 @@ self.addEventListener('activate', event => {
 self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
   if (event.request.method !== 'GET' || url.origin !== self.location.origin) return;
-  const path = event.request.mode === 'navigate' && url.pathname === '/' ? '/index.html' : url.pathname;
-  if (!FILES.includes(path)) return;
-  event.respondWith(caches.open(CACHE).then(cache => cache.match(path)).then(response => response || fetch(event.request)));
+  if (event.request.mode === 'navigate' && (url.pathname === '/' || url.pathname === '/index.html')) {
+    event.respondWith(openApp(event.request));
+    return;
+  }
+  if (!FILES.includes(url.pathname)) return;
+  event.respondWith(caches.match(url.pathname, { cacheName: CACHE }).then(response => response || fetch(event.request)));
 });
 `.trimStart());

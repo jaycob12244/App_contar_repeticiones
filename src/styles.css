@@ -115,6 +115,17 @@ button svg { flex: none; }
   text-align: left;
 }
 .list-button strong, .catalog-item strong { display: block; margin-bottom: 4px; }
+.history-row { display: flex; align-items: center; gap: 8px; padding: 10px; }
+.history-open {
+  flex: 1;
+  min-width: 0;
+  min-height: 46px;
+  padding: 6px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  overflow-wrap: anywhere;
+}
 .empty { display: grid; gap: 10px; justify-items: start; padding: 23px; }
 .notice { padding: 10px 12px; background: var(--subtle); border-radius: 11px; color: var(--text); }
 .inline-notice { display: flex; align-items: center; gap: 14px; justify-content: space-between; margin-bottom: 14px; }
