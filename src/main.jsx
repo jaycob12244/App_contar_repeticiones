@@ -38,10 +38,7 @@ function Header() {
   return (
     <header className="header">
       <div className="header-inner">
-        <div className="brand">
-          <span className="brand-icon"><Dumbbell size={21} /></span>
-          <div>Entreno<small className="release-check">Prueba Vercel 01</small></div>
-        </div>
+        <div className="brand"><span className="brand-icon"><Dumbbell size={21} /></span>Entreno</div>
         <ThemeButton />
       </div>
     </header>
