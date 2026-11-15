@@ -4,7 +4,7 @@ Web móvil para registrar series, repeticiones, carga, RIR y técnicas de intens
 
 ## Supabase
 
-1. Crea un proyecto de Supabase y aplica el SQL de [la migración inicial](supabase/migrations/20261115215438_training_diary.sql) en el SQL Editor. La migración prepara el catálogo, las tablas, los permisos y las funciones de la app.
+1. Crea un proyecto de Supabase y aplica en orden la [migración inicial](supabase/migrations/20261115215438_training_diary.sql) y la [migración de permisos para eliminar registros propios](supabase/migrations/20261115230930_allow_owned_record_deletion.sql) en el SQL Editor.
 2. Desde el SQL Editor, agrega los correos reales de las personas autorizadas. Sustituye los ejemplos antes de ejecutar esta consulta.
 
    ```sql

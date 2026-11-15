@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { accountApi, allowed, loadTable, saveExercise, saveRoutine, saveWorkout } from './backend.js';
+import { accountApi, allowed, deleteOwnedRecord, loadTable, saveExercise, saveRoutine, saveWorkout } from './backend.js';
 import { remapExercise } from './training.js';
 
 const keyFor = id => `entreno:data:${id}`;
@@ -13,11 +13,23 @@ export function replaceRecord(records, record) {
   return [record, ...records.filter(item => item.id !== record.id)];
 }
 
-export function enqueue(data, type, record) {
-  return { ...data, queue: [...data.queue, { id: crypto.randomUUID(), type, record }] };
+export function enqueue(data, type, record, action) {
+  return { ...data, queue: [...data.queue, { id: crypto.randomUUID(), type, record, action }] };
+}
+
+const ownedTables = { workout: 'workouts', routine: 'routines' };
+
+export function removeOwnedRecord(data, type, id) {
+  const table = ownedTables[type];
+  return enqueue({
+    ...data,
+    [table]: data[table].filter(record => record.id !== id),
+    queue: data.queue.filter(job => job.type !== type || job.record.id !== id),
+  }, type, { id }, 'delete');
 }
 
 function mergeRemote(remote, local, queue, type) {
+  // Locally deleted records stay hidden while the deletion is queued.
   const pending = new Set(queue.filter(job => job.type === type).map(job => job.record.id));
   return [...local.filter(record => pending.has(record.id)), ...remote.filter(record => !pending.has(record.id))];
 }
@@ -33,7 +45,7 @@ function reconcileExercise(data, originalId, shared) {
     draft: data.draft && remap(data.draft),
     workouts: data.workouts.map(remap),
     routines: data.routines.map(remap),
-    queue: data.queue.map(job => job.type === 'exercise' ? job : { ...job, record: remap(job.record) }),
+    queue: data.queue.map(job => job.type === 'exercise' || job.action === 'delete' ? job : { ...job, record: remap(job.record) }),
   };
 }
 
@@ -65,9 +77,15 @@ export function useLocalData(userId, sessionReady, onAccessDenied) {
         let job = read(userId).queue[0];
         while (job) {
           let shared;
-          if (job.type === 'exercise') shared = await saveExercise(api, job.record);
-          if (job.type === 'workout') await saveWorkout(api, job.record, userId);
-          if (job.type === 'routine') await saveRoutine(api, job.record, userId);
+          if (job.action === 'delete') {
+            await deleteOwnedRecord(api, ownedTables[job.type], job.record.id, userId);
+          } else if (job.type === 'exercise') {
+            shared = await saveExercise(api, job.record);
+          } else if (job.type === 'workout') {
+            await saveWorkout(api, job.record, userId);
+          } else if (job.type === 'routine') {
+            await saveRoutine(api, job.record, userId, job.action);
+          }
           update(previous => {
             const state = shared ? reconcileExercise(previous, job.record.id, shared) : previous;
             return { ...state, queue: state.queue.filter(item => item.id !== job.id) };

@@ -22,6 +22,8 @@ before(async () => {
   `);
   const migration = new URL('../supabase/migrations/20261115215438_training_diary.sql', import.meta.url);
   await db.exec(await readFile(migration, 'utf8'));
+  const deletion = new URL('../supabase/migrations/20261115230930_allow_owned_record_deletion.sql', import.meta.url);
+  await db.exec(await readFile(deletion, 'utf8'));
   await db.exec(`
     insert into private.allowed_emails values ('alice@example.com'), ('bob@example.com');
     insert into auth.users values
@@ -98,4 +100,18 @@ test('a malformed exercise cannot be persisted in a shareable template', async (
   await asUser(alice, async () => {
     await assert.rejects(db.query("insert into public.routines (owner_id, name, groups, exercises) values ($1, 'Rota', array['Pecho'], '[null]')", [alice]), /check constraint/i);
   });
+});
+
+test('only a record owner can delete it and repeating a deletion has no effect', async () => {
+  const id = '20000000-0000-4000-8000-000000000002';
+  await asUser(alice, async () => {
+    await db.query("insert into public.routines (id, owner_id, name, groups, exercises) values ($1, $2, 'Para eliminar', array['Pecho'], '[]')", [id, alice]);
+    await db.query("insert into public.workouts (id, owner_id, started_at, completed_at, groups, exercises) values ($1, $2, now(), now(), array['Pecho'], '[]')", [id, alice]);
+  });
+  for (const table of ['routines', 'workouts']) {
+    const remove = () => db.query(`delete from public.${table} where id = $1 returning id`, [id]);
+    assert.deepEqual((await asUser(bob, remove)).rows, []);
+    assert.deepEqual((await asUser(alice, remove)).rows, [{ id }]);
+    assert.deepEqual((await asUser(alice, remove)).rows, []);
+  }
 });

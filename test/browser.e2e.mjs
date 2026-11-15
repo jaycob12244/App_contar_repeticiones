@@ -69,6 +69,12 @@ const server = createServer(async (request, response) => {
       table.set(record.id, record);
       return json(response, null, 201);
     }
+    if (table && request.method === 'DELETE') {
+      const id = url.searchParams.get('id')?.replace(/^eq\./, '');
+      if (table.get(id)?.owner_id === owner) table.delete(id);
+      response.writeHead(204).end();
+      return;
+    }
     if (table) return json(response, [...table.values()].filter(row => row.owner_id === owner));
     const path = resolve(root, '.', pathname === '/' ? 'index.html' : '.' + pathname);
     if (!path.startsWith(root + sep)) return json(response, null, 404);
@@ -174,6 +180,32 @@ try {
   await expect(receiver.getByText('Aquí aparecerán tus entrenamientos finalizados.')).toBeVisible();
   await receiver.close();
 
+  await context.setOffline(true);
+  await page.goto(base);
+  await page.getByRole('button', { name: 'Historial', exact: true }).click();
+  await page.getByRole('button', { name: /Espalda.*3 series/ }).first().click();
+  await page.getByRole('button', { name: 'Eliminar entrenamiento' }).click();
+  await page.getByRole('button', { name: 'Cancelar' }).click();
+  await expect(page.getByRole('heading', { name: 'Jalón al pecho' })).toBeVisible();
+  await page.getByRole('button', { name: 'Eliminar entrenamiento' }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Eliminar entrenamiento' }).click();
+  await page.getByRole('button', { name: 'Rutinas', exact: true }).click();
+  await page.getByRole('button', { name: 'Eliminar Espalda de Ana' }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Eliminar rutina' }).click();
+  await page.reload();
+  await expect(page.getByText('2 por sincronizar · guardado en este teléfono')).toBeVisible();
+  await page.getByRole('button', { name: 'Progreso', exact: true }).click();
+  await expect(page.getByText('Todavía no hay un entrenamiento anterior.')).toBeVisible();
+  await page.getByRole('button', { name: 'Rutinas', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Espalda de Ana' })).toHaveCount(0);
+  expect(workouts.size).toBe(2);
+  expect(routines.size).toBe(2);
+  await context.setOffline(false);
+  await expect.poll(() => workouts.size).toBe(1);
+  await expect.poll(() => routines.size).toBe(1);
+  expect([...routines.values()][0].owner_id).toBe(profiles['lucas@example.com'].id);
+  await expect(page.getByText('Sincronizado', { exact: true })).toBeVisible();
+
   const saved = await context.storageState();
   const session = saved.origins.flatMap(origin => origin.localStorage).find(entry => /^sb-.*-auth-token$/.test(entry.name));
   const expired = { ...JSON.parse(session.value), expires_at: Math.floor(Date.now() / 1000) - 60 };
@@ -200,7 +232,7 @@ try {
   await reopened.getByRole('button', { name: 'Cerrar sesión' }).click();
   await reopened.reload();
   await expect(reopened.getByRole('heading', { name: 'Inicia sesión' })).toBeVisible();
-  console.log('OK: registro, modo sin conexión, rutinas compartidas, recuperación de sesión y cierre de sesión.');
+  console.log('OK: registro, modo sin conexión, rutinas compartidas, eliminación y recuperación de sesión.');
 } finally {
   await browser?.close();
   server.closeAllConnections();

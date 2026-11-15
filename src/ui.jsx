@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import {
   ArrowRight, CalendarDays, ChevronRight, ClipboardList, Copy, Dumbbell,
-  History, Link, LogOut, Plus, RotateCcw, TrendingUp,
+  History, Link, LogOut, Plus, RotateCcw, Trash2, TrendingUp,
 } from 'lucide-react';
 import { importRoutine, shareRoutine } from './backend.js';
-import { enqueue, replaceRecord, useLocalData } from './local-data.js';
+import { enqueue, removeOwnedRecord, replaceRecord, useLocalData } from './local-data.js';
 import { compareSets, describeLoad, exerciseHistory, makeWorkout, normalizeName } from './training.js';
 import { CatalogPicker, GroupPicker, Modal, RoutineEditor, SetEditor, Sets } from './training-ui.jsx';
 
@@ -14,7 +14,7 @@ const exerciseName = (catalog, id) => catalog.find(exercise => exercise.id === i
 const totalSets = workout => workout.exercises.reduce((total, entry) => total + entry.sets.length, 0);
 const newestFirst = (a, b) => Date.parse(b.completed_at) - Date.parse(a.completed_at);
 
-function HistoryView({ workouts, catalog, selected, onSelect, onSaveRoutine }) {
+function HistoryView({ workouts, catalog, selected, onSelect, onSaveRoutine, onDelete }) {
   if (selected) {
     return (
       <section className="stack">
@@ -25,6 +25,7 @@ function HistoryView({ workouts, catalog, selected, onSelect, onSaveRoutine }) {
           <Sets sets={entry.sets} />
         </article>)}
         <button className="secondary" onClick={() => onSaveRoutine(selected)}><ClipboardList size={18} /> Guardar como rutina</button>
+        <button className="text-button" onClick={() => onDelete(selected)}>Eliminar entrenamiento</button>
       </section>
     );
   }
@@ -209,11 +210,19 @@ export function TrainingApp({ profile, sessionReady, onAccessDenied, onLogout })
         ...fields,
         exercises: [...ids].map(exerciseId => ({ exerciseId })),
       };
-      return enqueue({ ...current, routines: replaceRecord(current.routines, routine) }, 'routine', routine);
+      return enqueue({ ...current, routines: replaceRecord(current.routines, routine) }, 'routine', routine, source.name ? 'update' : 'insert');
     })) {
       close();
       setTab('routines');
     }
+  }
+
+  function confirmDeletion() {
+    const { type, id } = modal.target;
+    if (!apply(current => removeOwnedRecord(current, type, id))) return;
+    if (type === 'workout') setChosenWorkout(null);
+    setMessage(type === 'workout' ? 'Entrenamiento eliminado.' : 'Rutina eliminada.');
+    close();
   }
 
   async function share(id) {
@@ -316,7 +325,8 @@ export function TrainingApp({ profile, sessionReady, onAccessDenied, onLogout })
         ))}
         {tab === 'history' && <HistoryView workouts={workouts} catalog={catalog}
           selected={workouts.find(workout => workout.id === chosenWorkout)} onSelect={setChosenWorkout}
-          onSaveRoutine={source => setModal({ type: 'routine', source })} />}
+          onSaveRoutine={source => setModal({ type: 'routine', source })}
+          onDelete={workout => setModal({ type: 'delete', target: { type: 'workout', id: workout.id } })} />}
         {tab === 'progress' && <ProgressView workouts={workouts} catalog={catalog} />}
         {tab === 'routines' && <section className="stack">
           <div className="page-title section-heading"><h1>Rutinas</h1>
@@ -330,6 +340,8 @@ export function TrainingApp({ profile, sessionReady, onAccessDenied, onLogout })
               <button className="primary compact" onClick={() => start(routine)}>Entrenar</button>
               <button className="secondary compact" onClick={() => setModal({ type: 'routine', source: routine })}>Editar</button>
               <button className="secondary compact" disabled={!connected || busy} onClick={() => share(routine.id)}><Link size={16} /> Compartir</button>
+              <button className="icon-button" aria-label={`Eliminar ${routine.name}`}
+                onClick={() => setModal({ type: 'delete', target: { type: 'routine', id: routine.id, name: routine.name } })}><Trash2 size={17} /></button>
             </div>
           </article>)}
         </section>}
@@ -359,6 +371,19 @@ export function TrainingApp({ profile, sessionReady, onAccessDenied, onLogout })
         </div>
       </Modal>}
       {modal?.type === 'routine' && <RoutineEditor source={modal.source} catalog={catalog} aliases={data.aliases} onClose={close} onSave={fields => saveRoutine(modal.source, fields)} />}
+      {modal?.type === 'delete' && (
+        <Modal title={modal.target.type === 'workout' ? '¿Eliminar entrenamiento?' : '¿Eliminar rutina?'} onClose={close}>
+          <div className="stack">
+            <p>{modal.target.type === 'workout'
+              ? 'El entrenamiento y sus series se quitarán del historial y del progreso.'
+              : `Se quitará «${modal.target.name}» de tus rutinas.`}</p>
+            <div className="actions">
+              <button className="secondary" onClick={close}>Cancelar</button>
+              <button className="primary" onClick={confirmDeletion}>{modal.target.type === 'workout' ? 'Eliminar entrenamiento' : 'Eliminar rutina'}</button>
+            </div>
+          </div>
+        </Modal>
+      )}
       {modal?.type === 'share' && <Modal title="Compartir rutina" onClose={close}>
         <div className="stack">
           <label>Enlace de la rutina<input readOnly value={shareLink} onFocus={event => event.currentTarget.select()} /></label>

@@ -63,13 +63,24 @@ export async function saveWorkout(api, workout, owner_id) {
   await result(api.from('workouts').select('id').eq('id', workout.id).single());
 }
 
-export async function saveRoutine(api, routine, owner_id) {
+export async function saveRoutine(api, routine, owner_id, action) {
   const { id, name, groups, exercises } = routine;
   const fields = { name, groups, exercises };
+  if (action === 'update') {
+    // An edit queued on another device must not recreate a deleted routine.
+    await result(api.from('routines').update(fields).eq('id', id).eq('owner_id', owner_id));
+    return;
+  }
   const { error } = await api.from('routines').insert({ id, owner_id, ...fields });
   if (!error) return;
   if (error.code !== '23505') throw error;
+  if (action === 'insert') return;
+  // Queues from older versions used a single operation for new and edited routines.
   await result(api.from('routines').update(fields).eq('id', id).select('id').single());
+}
+
+export function deleteOwnedRecord(api, table, id, userId) {
+  return result(api.from(table).delete().eq('id', id).eq('owner_id', userId));
 }
 
 export async function shareRoutine(userId, id) {
