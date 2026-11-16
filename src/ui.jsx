@@ -321,14 +321,13 @@ export function TrainingApp({ profile, sessionReady, onAccessDenied, onLogout })
         </div>}
         <div key={tab} ref={tabView} className="tab-view">
         {tab === 'train' && (!draft ? (
-          <section className="stack">
+          <section className={workouts[0] ? 'stack home-layout home-with-recent' : 'stack home-layout'}>
             <div className="hero">
-              <Dumbbell size={32} strokeWidth={1.75} />
               <h1>Entrenamiento</h1>
               <button className="primary" onClick={() => { setGroups([]); setModal({ type: 'new' }); }}><Plus size={20} /> Nuevo entrenamiento</button>
               <button className="secondary" disabled={!workouts.length} onClick={() => start(workouts[0])}><RotateCcw size={18} /> Repetir último entrenamiento</button>
             </div>
-            {workouts[0] && <div className="stack">
+            {workouts[0] && <div className="stack recent-workout">
               <h2>Último entrenamiento</h2>
               <button className="card list-button" onClick={() => { setChosenWorkout(workouts[0].id); setTab('history'); }}>
                 <span><strong>{workouts[0].groups.join(' · ')}</strong><small>{dateLabel(workouts[0].completed_at)} · {totalSets(workouts[0])} series</small></span>
@@ -341,16 +340,20 @@ export function TrainingApp({ profile, sessionReady, onAccessDenied, onLogout })
             <div className="page-title"><h1>En entrenamiento</h1><p>{draft.groups.join(' · ')} · {totalSets(draft)} series</p></div>
             {draft.exercises.map(entry => {
               const last = exerciseHistory(workouts, entry.exerciseId)[0];
-              return <article className="card stack" key={entry.exerciseId}>
-                <div className="section-heading exercise-heading"><h2>{exerciseName(catalog, entry.exerciseId)}</h2>
-                  {!entry.sets.length && <button className="text-button" onClick={() => updateExercises(exercises => exercises.filter(item => item.exerciseId !== entry.exerciseId))}>Quitar</button>}
+              return <article className="card stack exercise-card" key={entry.exerciseId}>
+                <div className="exercise-heading">
+                  <div>
+                    <h2>{exerciseName(catalog, entry.exerciseId)}</h2>
+                    <small>{entry.sets.length} {entry.sets.length === 1 ? 'serie' : 'series'}</small>
+                  </div>
+                  <button className="secondary compact add-set" onClick={event => setModal({
+                    type: 'set', id: entry.exerciseId, anchor: event.currentTarget,
+                  })}><Plus size={17} /> Agregar serie</button>
                 </div>
-                <button className="secondary add-set" onClick={event => setModal({
-                  type: 'set', id: entry.exerciseId, anchor: event.currentTarget,
-                })}><Plus size={18} /> Agregar serie</button>
-                {last && <details><summary>Última vez · {last.sets.length} {last.sets.length === 1 ? 'serie' : 'series'}</summary><Sets sets={last.sets} /></details>}
+                {last && <details className="exercise-history"><summary>Última vez · {last.sets.length} {last.sets.length === 1 ? 'serie' : 'series'}</summary><Sets sets={last.sets} /></details>}
                 <Sets sets={entry.sets} onEdit={(index, anchor) => setModal({ type: 'set', id: entry.exerciseId, index, anchor })}
                   onRemove={index => updateExercises(exercises => exercises.map(item => item.exerciseId === entry.exerciseId ? { ...item, sets: item.sets.filter((_, position) => index !== position) } : item))} />
+                {!entry.sets.length && <button className="text-button align-start" onClick={() => updateExercises(exercises => exercises.filter(item => item.exerciseId !== entry.exerciseId))}>Quitar</button>}
               </article>;
             })}
             <button className="secondary" onClick={() => setModal({ type: 'catalog' })}><Plus size={20} /> Agregar ejercicio</button>
