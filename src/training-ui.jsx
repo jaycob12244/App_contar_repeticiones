@@ -1,16 +1,54 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useLayoutEffect, useRef, useState } from 'react';
 import { ArrowDown, ArrowUp, Check, Plus, Search, X } from 'lucide-react';
 import { describeLoad, GROUPS, normalizeName } from './training.js';
 
-export function Modal({ title, onClose, children }) {
+export function Modal({ title, onClose, children, scrollAnchor }) {
   const dialog = useRef(null);
-  useEffect(() => {
+  useLayoutEffect(() => {
     const element = dialog.current;
+    if (!scrollAnchor) {
+      element.showModal();
+      return () => element.close();
+    }
+
+    const page = document.body;
+    const scrollTop = window.scrollY;
+    const anchorTop = scrollAnchor.getBoundingClientRect().top;
+    const viewport = window.visualViewport;
+    function fitEditor() {
+      if (!viewport) return;
+      const coveredBottom = Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop);
+      element.style.setProperty('--editor-height', `${Math.max(0, viewport.height - 12)}px`);
+      element.style.setProperty('--editor-bottom', `${coveredBottom}px`);
+    }
+    page.style.setProperty('--series-scroll-top', `${-scrollTop}px`);
+    page.classList.add('series-editor-open');
+    fitEditor();
     element.showModal();
-    return () => element.close();
-  }, []);
+    viewport?.addEventListener('resize', fitEditor);
+    viewport?.addEventListener('scroll', fitEditor);
+    return () => {
+      viewport?.removeEventListener('resize', fitEditor);
+      viewport?.removeEventListener('scroll', fitEditor);
+      if (element.contains(document.activeElement)) document.activeElement.blur();
+      element.close();
+      page.classList.remove('series-editor-open');
+      page.style.removeProperty('--series-scroll-top');
+      window.scrollTo(0, scrollTop);
+      if (!scrollAnchor.isConnected) return;
+      scrollAnchor.focus({ preventScroll: true });
+      requestAnimationFrame(() => {
+        if (!scrollAnchor.isConnected || document.activeElement !== scrollAnchor || page.classList.contains('series-editor-open')) return;
+        const difference = scrollAnchor.getBoundingClientRect().top - anchorTop;
+        window.scrollBy(0, difference);
+      });
+    };
+  }, [scrollAnchor]);
   return (
-    <dialog ref={dialog} onCancel={onClose} aria-labelledby="dialog-title">
+    <dialog ref={dialog} className={scrollAnchor ? 'series-editor' : undefined} onCancel={event => {
+      event.preventDefault();
+      onClose();
+    }} aria-labelledby="dialog-title">
       <div className="dialog-header">
         <h2 id="dialog-title">{title}</h2>
         <button className="icon-button" onClick={onClose} aria-label="Cerrar"><X size={20} /></button>
@@ -81,6 +119,7 @@ export function CatalogPicker({ catalog, groups, selected, onSelect, onCreate })
 }
 
 function LoadInputs({ unit, load, onChange, allowBody = true }) {
+  const kilograms = unit === 'kg';
   return (
     <div className="fields">
       <label>Unidad
@@ -91,14 +130,19 @@ function LoadInputs({ unit, load, onChange, allowBody = true }) {
         </select>
       </label>
       {unit !== 'body' && (
-        <label>Carga<input type="number" inputMode={unit === 'kg' ? 'decimal' : 'numeric'} required min="0" step={unit === 'plates' ? '1' : 'any'}
+        <label>Carga<input key={unit} required
+          {...(kilograms
+            ? { type: 'text', inputMode: 'decimal', maxLength: 32, pattern: '[0-9]+([.,][0-9]+)?', title: 'Escribe un peso como 17,5 o 17.5' }
+            : { type: 'number', inputMode: 'numeric', min: 0, step: 1 })}
           value={load} onChange={event => onChange({ unit, load: event.target.value })} /></label>
       )}
     </div>
   );
 }
 
-export function SetEditor({ existing, previous, onSave, onClose }) {
+const loadNumber = value => Number(String(value).replace(',', '.'));
+
+export function SetEditor({ existing, previous, onSave, onClose, scrollAnchor }) {
   const [fields, setFields] = useState(() => existing ? {
     ...existing, rir: existing.rir ?? '', load: existing.load ?? '',
     stages: existing.stages.map(stage => ({ ...stage, id: crypto.randomUUID() })),
@@ -119,18 +163,18 @@ export function SetEditor({ existing, previous, onSave, onClose }) {
     }],
   }));
   return (
-    <Modal title={existing ? 'Editar serie' : 'Agregar serie'} onClose={onClose}>
+    <Modal title={existing ? 'Editar serie' : 'Agregar serie'} onClose={onClose} scrollAnchor={scrollAnchor}>
       <form className="stack" onSubmit={event => {
         event.preventDefault();
         onSave({
           reps: Number(fields.reps),
           unit: fields.unit,
-          load: fields.unit === 'body' ? null : Number(fields.load),
+          load: fields.unit === 'body' ? null : loadNumber(fields.load),
           rir: fields.rir === '' ? null : Number(fields.rir),
           failure: fields.failure,
           stages: fields.stages.map(stage => ({
             type: stage.type, reps: Number(stage.reps),
-            ...(stage.type === 'drop' && { unit: stage.unit, load: Number(stage.load) }),
+            ...(stage.type === 'drop' && { unit: stage.unit, load: loadNumber(stage.load) }),
           })),
         });
       }}>
@@ -175,7 +219,7 @@ export function Sets({ sets, onEdit, onRemove }) {
               {stage.type === 'drop' ? 'Drop set' : 'Rest-pause'} · {stage.reps} rep{stage.type === 'drop' && ` · ${describeLoad(stage)}`}
             </small>)}
           </div>
-          {onEdit && <button className="text-button" onClick={() => onEdit(index)} aria-label={`Editar serie ${index + 1}`}>Editar</button>}
+          {onEdit && <button className="text-button" onClick={event => onEdit(index, event.currentTarget)} aria-label={`Editar serie ${index + 1}`}>Editar</button>}
           {onRemove && <button className="icon-button discreet" onClick={() => onRemove(index)} aria-label={`Quitar serie ${index + 1}`}><X size={17} /></button>}
         </li>
       ))}

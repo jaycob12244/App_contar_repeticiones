@@ -14,83 +14,7 @@ const exerciseName = (catalog, id) => catalog.find(exercise => exercise.id === i
 const totalSets = workout => workout.exercises.reduce((total, entry) => total + entry.sets.length, 0);
 const newestFirst = (a, b) => Date.parse(b.completed_at) - Date.parse(a.completed_at);
 
-const swipeDeleteDistance = 100;
-
-function HistoryWorkoutRow({ workout, onSelect, onDelete, onSwipeDelete }) {
-  const gesture = useRef(null);
-  const suppressClick = useRef(false);
-  const [offset, setOffset] = useState(0);
-  const group = workout.groups.join(' · ');
-  const date = dateLabel(workout.completed_at);
-
-  function startSwipe(event) {
-    if (!event.isPrimary || event.button !== 0) return;
-    suppressClick.current = false;
-    gesture.current = { id: event.pointerId, x: event.clientX, y: event.clientY, axis: null };
-  }
-
-  function moveSwipe(event) {
-    const start = gesture.current;
-    if (!start || start.id !== event.pointerId) return;
-    const left = start.x - event.clientX;
-    const vertical = Math.abs(event.clientY - start.y);
-    if (!start.axis && Math.max(Math.abs(left), vertical) >= 8) {
-      start.axis = Math.abs(left) > vertical ? 'horizontal' : 'vertical';
-      if (start.axis === 'horizontal') {
-        suppressClick.current = true;
-        event.currentTarget.setPointerCapture(event.pointerId);
-      }
-    }
-    if (start.axis === 'horizontal') setOffset(Math.max(0, Math.min(left, 136)));
-  }
-
-  function resetSwipe() {
-    gesture.current = null;
-    setOffset(0);
-  }
-
-  function finishSwipe(event) {
-    const start = gesture.current;
-    if (!start || start.id !== event.pointerId) return;
-    resetSwipe();
-    const left = start.x - event.clientX;
-    const vertical = Math.abs(event.clientY - start.y);
-    if (start.axis === 'horizontal' && left >= swipeDeleteDistance && left >= vertical * 1.5) {
-      onSwipeDelete(workout.id);
-    } else if (!start.axis && Math.abs(left) < 8 && vertical < 8 && event.pointerType === 'touch'
-      && event.target.closest('.history-open')) {
-      suppressClick.current = true;
-      onSelect(workout.id);
-    }
-  }
-
-  return (
-    <article className="history-card" onPointerDown={startSwipe} onPointerMove={moveSwipe}
-      onPointerUp={finishSwipe} onPointerCancel={resetSwipe} onLostPointerCapture={event => {
-        if (event.target === event.currentTarget && gesture.current?.id === event.pointerId) resetSwipe();
-      }}
-      onClickCapture={event => {
-        if (!suppressClick.current || event.detail === 0) return;
-        suppressClick.current = false;
-        event.stopPropagation();
-      }}>
-      <div className="history-swipe-action" aria-hidden="true"><Trash2 size={17} /> Eliminar</div>
-      <div className={offset ? 'card history-row history-row-dragging' : 'card history-row'}
-        style={offset ? { transform: `translateX(-${offset}px)` } : undefined}>
-        <button className="list-button history-open" onClick={() => onSelect(workout.id)}>
-          <span><strong>{group}</strong><small>{date} · {totalSets(workout)} series</small></span>
-          <ChevronRight size={20} />
-        </button>
-        <button className="secondary compact" onClick={() => onDelete(workout)}
-          aria-label={`Eliminar entrenamiento de ${group} del ${date}`}>
-          <Trash2 size={16} /> Eliminar
-        </button>
-      </div>
-    </article>
-  );
-}
-
-function HistoryView({ workouts, catalog, selected, onSelect, onSaveRoutine, onDelete, onSwipeDelete }) {
+function HistoryView({ workouts, catalog, selected, onSelect, onSaveRoutine, onDelete }) {
   if (selected) {
     return (
       <section className="stack">
@@ -112,8 +36,16 @@ function HistoryView({ workouts, catalog, selected, onSelect, onSaveRoutine, onD
       <div className="page-title"><h1>Historial</h1></div>
       {!workouts.length && <div className="card empty"><CalendarDays size={24} /><p>Aquí aparecerán tus entrenamientos finalizados.</p></div>}
       {workouts.map(workout => (
-        <HistoryWorkoutRow key={workout.id} workout={workout} onSelect={onSelect}
-          onDelete={onDelete} onSwipeDelete={onSwipeDelete} />
+        <article key={workout.id} className="card history-row">
+          <button className="list-button history-open" onClick={() => onSelect(workout.id)}>
+            <span><strong>{workout.groups.join(' · ')}</strong><small>{dateLabel(workout.completed_at)} · {totalSets(workout)} series</small></span>
+            <ChevronRight size={20} />
+          </button>
+          <button className="secondary compact" onClick={() => onDelete(workout)}
+            aria-label={`Eliminar entrenamiento de ${workout.groups.join(' · ')} del ${dateLabel(workout.completed_at)}`}>
+            <Trash2 size={16} /> Eliminar
+          </button>
+        </article>
       ))}
     </section>
   );
@@ -183,6 +115,8 @@ const tabs = [
 export function TrainingApp({ profile, sessionReady, onAccessDenied, onLogout }) {
   const { data, update, sync, syncing, syncError, online } = useLocalData(profile.id, sessionReady, onAccessDenied);
   const [tab, setTab] = useState(() => window.location.pathname === '/historial' ? 'history' : 'train');
+  const tabView = useRef(null);
+  const tabExit = useRef(null);
   const [modal, setModal] = useState(null);
   const [groups, setGroups] = useState([]);
   const [chosenWorkout, setChosenWorkout] = useState(null);
@@ -198,6 +132,29 @@ export function TrainingApp({ profile, sessionReady, onAccessDenied, onLogout })
   const close = () => setModal(null);
   const pending = data.queue.length;
   const connected = online && sessionReady;
+
+  function selectTab(next) {
+    tabExit.current?.cancel();
+    tabExit.current = null;
+    const show = () => {
+      if (next === 'history') setChosenWorkout(null);
+      if (next !== tab) window.scrollTo(0, 0);
+      setTab(next);
+    };
+    if (next === tab || !tabView.current?.animate || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      show();
+      return;
+    }
+    const exit = tabView.current.animate(
+      [{ opacity: 1, transform: 'translateY(0)' }, { opacity: 0, transform: 'translateY(-5px)' }],
+      { duration: 105, easing: 'ease-in', fill: 'forwards' },
+    );
+    tabExit.current = exit;
+    exit.onfinish = () => {
+      tabExit.current = null;
+      show();
+    };
+  }
 
   function apply(change) {
     try {
@@ -362,6 +319,7 @@ export function TrainingApp({ profile, sessionReady, onAccessDenied, onLogout })
           <div className="actions"><button className="primary compact" disabled={!connected || busy} onClick={acceptRoutine}>Guardar en mis rutinas</button>
             <button className="text-button" onClick={clearToken}>Descartar</button></div>
         </div>}
+        <div key={tab} ref={tabView} className="tab-view">
         {tab === 'train' && (!draft ? (
           <section className="stack">
             <div className="hero">
@@ -384,13 +342,15 @@ export function TrainingApp({ profile, sessionReady, onAccessDenied, onLogout })
             {draft.exercises.map(entry => {
               const last = exerciseHistory(workouts, entry.exerciseId)[0];
               return <article className="card stack" key={entry.exerciseId}>
-                <div className="section-heading"><h2>{exerciseName(catalog, entry.exerciseId)}</h2>
+                <div className="section-heading exercise-heading"><h2>{exerciseName(catalog, entry.exerciseId)}</h2>
                   {!entry.sets.length && <button className="text-button" onClick={() => updateExercises(exercises => exercises.filter(item => item.exerciseId !== entry.exerciseId))}>Quitar</button>}
                 </div>
+                <button className="secondary add-set" onClick={event => setModal({
+                  type: 'set', id: entry.exerciseId, anchor: event.currentTarget,
+                })}><Plus size={18} /> Agregar serie</button>
                 {last && <details><summary>Última vez · {last.sets.length} {last.sets.length === 1 ? 'serie' : 'series'}</summary><Sets sets={last.sets} /></details>}
-                <Sets sets={entry.sets} onEdit={index => setModal({ type: 'set', id: entry.exerciseId, index })}
+                <Sets sets={entry.sets} onEdit={(index, anchor) => setModal({ type: 'set', id: entry.exerciseId, index, anchor })}
                   onRemove={index => updateExercises(exercises => exercises.map(item => item.exerciseId === entry.exerciseId ? { ...item, sets: item.sets.filter((_, position) => index !== position) } : item))} />
-                <button className="secondary" onClick={() => setModal({ type: 'set', id: entry.exerciseId })}><Plus size={18} /> Agregar serie</button>
               </article>;
             })}
             <button className="secondary" onClick={() => setModal({ type: 'catalog' })}><Plus size={20} /> Agregar ejercicio</button>
@@ -401,7 +361,6 @@ export function TrainingApp({ profile, sessionReady, onAccessDenied, onLogout })
         {tab === 'history' && <HistoryView workouts={workouts} catalog={catalog}
           selected={workouts.find(workout => workout.id === chosenWorkout)} onSelect={setChosenWorkout}
           onSaveRoutine={source => setModal({ type: 'routine', source })}
-          onSwipeDelete={id => deleteRecord('workout', id)}
           onDelete={workout => setModal({ type: 'delete', target: { type: 'workout', id: workout.id } })} />}
         {tab === 'progress' && <ProgressView workouts={workouts} catalog={catalog} />}
         {tab === 'routines' && <section className="stack">
@@ -421,12 +380,11 @@ export function TrainingApp({ profile, sessionReady, onAccessDenied, onLogout })
             </div>
           </article>)}
         </section>}
+        </div>
       </main>
       <nav className="bottom-nav" aria-label="Navegación principal">
-        <div>{tabs.map(([value, label, Icon]) => <button key={value} aria-current={tab === value ? 'page' : undefined} onClick={() => {
-          setTab(value);
-          if (value === 'history') setChosenWorkout(null);
-        }}><Icon size={22} /><span>{label}</span></button>)}</div>
+        <div>{tabs.map(([value, label, Icon]) => <button key={value} aria-current={tab === value ? 'page' : undefined}
+          onClick={() => selectTab(value)}><Icon size={22} /><span>{label}</span></button>)}</div>
       </nav>
       {modal?.type === 'new' && <Modal title="¿Qué vas a entrenar?" onClose={close}>
         <div className="stack"><GroupPicker values={groups} onChange={setGroups} />
@@ -436,7 +394,7 @@ export function TrainingApp({ profile, sessionReady, onAccessDenied, onLogout })
       {modal?.type === 'catalog' && draft && <Modal title="Agregar ejercicio" onClose={close}>
         <CatalogPicker catalog={catalog} groups={draft.groups} selected={draft.exercises.map(entry => entry.exerciseId)} onSelect={selectExercise} onCreate={createExercise} />
       </Modal>}
-      {editEntry && <SetEditor onClose={close} existing={editEntry.sets[modal.index]} previous={editEntry.sets.at(-1) || exerciseHistory(workouts, editEntry.exerciseId)[0]?.sets[0]}
+      {editEntry && <SetEditor onClose={close} scrollAnchor={modal.anchor} existing={editEntry.sets[modal.index]} previous={editEntry.sets.at(-1) || exerciseHistory(workouts, editEntry.exerciseId)[0]?.sets[0]}
         onSave={set => saveSet(modal.id, set, modal.index)} />}
       {modal?.type === 'discard' && <Modal title="¿Descartar entrenamiento?" onClose={close}>
         <div className="stack"><p>Se eliminarán las series de este entrenamiento en curso.</p>
