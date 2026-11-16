@@ -5,6 +5,10 @@ import { resolve, sep } from 'node:path';
 import { chromium, expect } from '@playwright/test';
 
 const exercise = { id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', name: 'Jalón al pecho', muscle: 'Espalda' };
+const catalog = [exercise,
+  { id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', name: 'Remo en polea', muscle: 'Espalda' },
+  { id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', name: 'Dominadas', muscle: 'Espalda' },
+];
 const share = '33333333-3333-4333-8333-333333333333';
 const profiles = {
   'ana@example.com': { id: '11111111-1111-4111-8111-111111111111', user_metadata: { display_name: 'Ana' } },
@@ -64,7 +68,13 @@ const server = createServer(async (request, response) => {
     }
     if (pathname === '/auth/v1/logout') return json(response, {});
     if (pathname === '/rest/v1/rpc/app_allowed') return json(response, true);
-    if (pathname === '/rest/v1/exercises') return json(response, [exercise]);
+    if (pathname === '/rest/v1/exercises') return json(response, catalog);
+    if (pathname === '/rest/v1/rpc/register_exercise') {
+      const { p_id, p_name, p_muscle } = await readBody(request);
+      const created = { id: p_id, name: p_name, muscle: p_muscle };
+      catalog.push(created);
+      return json(response, created);
+    }
     if (pathname === '/rest/v1/rpc/share_routine') {
       const { p_routine_id } = await readBody(request);
       shared = routines.get(p_routine_id);
@@ -277,6 +287,45 @@ try {
   await expect.poll(() => workouts.size).toBe(2);
   await expect(oneSeries).toHaveCount(0);
   await expect(page.getByRole('dialog')).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'Entrenar', exact: true }).click();
+  await page.getByRole('button', { name: 'Nuevo entrenamiento' }).click();
+  await page.getByRole('button', { name: 'Espalda', exact: true }).click();
+  await page.getByRole('button', { name: 'Elegir ejercicios' }).click();
+  await page.getByRole('button', { name: /Jalón al pecho/ }).click();
+  await addSeries(page, 8);
+  await page.getByRole('button', { name: 'Agregar ejercicio' }).click();
+  await page.getByRole('button', { name: /Remo en polea/ }).click();
+  await page.getByRole('button', { name: 'Subir Remo en polea' }).click();
+  await expect(page.getByRole('article').getByRole('heading')).toHaveText(['Remo en polea', 'Jalón al pecho']);
+  await page.getByRole('button', { name: 'Cambiar Jalón al pecho' }).click();
+  await expect(page.getByRole('dialog').getByRole('button', { name: /Remo en polea/ })).toBeDisabled();
+  await page.getByRole('button', { name: /Dominadas/ }).click();
+  await page.getByRole('button', { name: 'Cancelar' }).click();
+  await expect(page.getByText('8 rep · 10 placas', { exact: true }).filter({ visible: true })).toBeVisible();
+  await page.getByRole('button', { name: /Dominadas/ }).click();
+  await page.getByRole('button', { name: 'Confirmar cambio' }).click();
+  await expect(page.getByRole('article').getByRole('heading')).toHaveText(['Remo en polea', 'Dominadas']);
+  await page.reload();
+  await expect(page.getByRole('article').getByRole('heading')).toHaveText(['Remo en polea', 'Dominadas']);
+  await page.getByRole('button', { name: 'Descartar entrenamiento' }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Descartar entrenamiento' }).click();
+
+  await page.getByRole('button', { name: 'Rutinas', exact: true }).click();
+  await page.getByRole('button', { name: 'Nueva', exact: true }).click();
+  await page.getByLabel('Nombre de la rutina').fill('Rutina con ejercicio nuevo');
+  await page.getByRole('button', { name: 'Espalda', exact: true }).click();
+  await page.getByText('Elegir ejercicios', { exact: true }).click();
+  await page.getByRole('button', { name: 'Crear ejercicio' }).click();
+  await page.getByLabel('Nombre', { exact: true }).fill('Remo en banco inclinado');
+  await page.getByRole('button', { name: 'Guardar ejercicio' }).click();
+  await expect.poll(() => catalog.find(item => item.name === 'Remo en banco inclinado')?.id).toBeTruthy();
+  await page.getByRole('button', { name: 'Guardar rutina', exact: true }).click();
+  await expect.poll(() => [...routines.values()][0]?.exercises[0]?.exerciseId)
+    .toBe(catalog.find(item => item.name === 'Remo en banco inclinado')?.id);
+  await page.getByRole('button', { name: 'Eliminar Rutina con ejercicio nuevo' }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Eliminar rutina' }).click();
+  await expect.poll(() => routines.size).toBe(0);
 
   await page.getByRole('button', { name: 'Historial', exact: true }).click();
   await page.getByRole('button', { name: /Espalda.*3 series/ }).first().click();

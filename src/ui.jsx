@@ -6,7 +6,7 @@ import {
 import { importRoutine, shareRoutine } from './backend.js';
 import { enqueue, removeOwnedRecord, replaceRecord, useLocalData } from './local-data.js';
 import { compareSets, describeLoad, exerciseHistory, makeWorkout, normalizeName } from './training.js';
-import { CatalogPicker, GroupPicker, Modal, RoutineEditor, SetEditor, Sets } from './training-ui.jsx';
+import { CatalogPicker, ExerciseOrderButtons, GroupPicker, Modal, RoutineEditor, SetEditor, Sets } from './training-ui.jsx';
 
 const dateLabel = date => new Intl.DateTimeFormat('es-CO', { dateStyle: 'medium' }).format(new Date(date));
 const signed = number => number > 0 ? `+${number}` : String(number);
@@ -179,39 +179,52 @@ export function TrainingApp({ profile, sessionReady, onAccessDenied, onLogout })
     if (!template.exercises.length) setModal({ type: 'catalog' });
   }
 
-  function selectExercise(exercise) {
-    const add = current => {
-      if (current.draft.exercises.some(item => item.exerciseId === exercise.id)) return current;
-      return { ...current, draft: {
-        ...current.draft, exercises: [...current.draft.exercises, { exerciseId: exercise.id, sets: [] }],
-      } };
-    };
-    if (apply(add)) close();
+  function selectExercise(exercise, confirmed = false) {
+    const exerciseId = exerciseIdFor(exercise.id);
+    const replaceId = modal.replaceId && exerciseIdFor(modal.replaceId);
+    const replaced = draft.exercises.find(entry => entry.exerciseId === replaceId);
+    if (draft.exercises.some(entry => entry.exerciseId === exerciseId)) return;
+    if (replaced?.sets.length && !confirmed) {
+      setModal({ ...modal, replacement: exercise });
+      return;
+    }
+    const next = { exerciseId, sets: [] };
+    if (updateExercises(exercises => {
+      if (exercises.some(entry => entry.exerciseId === exerciseId)) return exercises;
+      if (!replaceId) return [...exercises, next];
+      return exercises.map(entry => entry.exerciseId === replaceId && (confirmed || !entry.sets.length) ? next : entry);
+    })) close();
   }
 
   function createExercise(value, muscle) {
     const name = value.trim().replace(/\s+/g, ' ');
-    if (!name) return false;
-    const existing = catalog.find(exercise => normalizeName(exercise.name) === normalizeName(name));
-    if (existing) {
-      selectExercise(existing);
-      setMessage('El ejercicio ya estaba en el catálogo.');
-      return true;
-    }
-    const exercise = { id: crypto.randomUUID(), name, muscle, author_name: profile.name };
-    const saved = apply(current => enqueue({
-      ...current,
-      catalog: [...current.catalog, exercise],
-      draft: { ...current.draft, exercises: [...current.draft.exercises, { exerciseId: exercise.id, sets: [] }] },
-    }, 'exercise', exercise));
-    if (saved) close();
-    return saved;
+    if (!name) return null;
+    const normalized = normalizeName(name);
+    let exercise;
+    const saved = apply(current => {
+      exercise = current.catalog.find(item => normalizeName(item.name) === normalized);
+      if (exercise) return current;
+      exercise = { id: crypto.randomUUID(), name, muscle, author_name: profile.name };
+      return enqueue({ ...current, catalog: [...current.catalog, exercise] }, 'exercise', exercise);
+    });
+    return saved ? exercise : null;
   }
 
   function updateExercises(change) {
     return apply(current => {
       if (!current.draft || current.draft.id !== draft.id) return current;
       return { ...current, draft: { ...current.draft, exercises: change(current.draft.exercises) } };
+    });
+  }
+
+  function moveExercise(exerciseId, delta) {
+    updateExercises(exercises => {
+      const index = exercises.findIndex(entry => entry.exerciseId === exerciseId);
+      const destination = index + delta;
+      if (index < 0 || destination < 0 || destination >= exercises.length) return exercises;
+      const reordered = [...exercises];
+      [reordered[index], reordered[destination]] = [reordered[destination], reordered[index]];
+      return reordered;
     });
   }
 
@@ -338,22 +351,29 @@ export function TrainingApp({ profile, sessionReady, onAccessDenied, onLogout })
         ) : (
           <section className="stack">
             <div className="page-title"><h1>En entrenamiento</h1><p>{draft.groups.join(' · ')} · {totalSets(draft)} series</p></div>
-            {draft.exercises.map(entry => {
+            {draft.exercises.map((entry, index) => {
               const last = exerciseHistory(workouts, entry.exerciseId)[0];
+              const name = exerciseName(catalog, entry.exerciseId);
               return <article className="card stack exercise-card" key={entry.exerciseId}>
                 <div className="exercise-heading">
                   <div>
-                    <h2>{exerciseName(catalog, entry.exerciseId)}</h2>
+                    <h2>{name}</h2>
                     <small>{entry.sets.length} {entry.sets.length === 1 ? 'serie' : 'series'}</small>
                   </div>
                   <button className="secondary compact add-set" onClick={event => setModal({
                     type: 'set', id: entry.exerciseId, anchor: event.currentTarget,
                   })}><Plus size={17} /> Agregar serie</button>
                 </div>
+                <div className="actions">
+                  <button className="secondary compact" aria-label={`Cambiar ${name}`}
+                    onClick={() => setModal({ type: 'catalog', replaceId: entry.exerciseId })}>Cambiar</button>
+                  {draft.exercises.length > 1 && <ExerciseOrderButtons name={name} index={index}
+                    count={draft.exercises.length} onMove={delta => moveExercise(entry.exerciseId, delta)} />}
+                  {!entry.sets.length && <button className="text-button" onClick={() => updateExercises(exercises => exercises.filter(item => item.exerciseId !== entry.exerciseId))}>Quitar</button>}
+                </div>
                 {last && <details className="exercise-history"><summary>Última vez · {last.sets.length} {last.sets.length === 1 ? 'serie' : 'series'}</summary><Sets sets={last.sets} /></details>}
                 <Sets sets={entry.sets} onEdit={(index, anchor) => setModal({ type: 'set', id: entry.exerciseId, index, anchor })}
                   onRemove={index => updateExercises(exercises => exercises.map(item => item.exerciseId === entry.exerciseId ? { ...item, sets: item.sets.filter((_, position) => index !== position) } : item))} />
-                {!entry.sets.length && <button className="text-button align-start" onClick={() => updateExercises(exercises => exercises.filter(item => item.exerciseId !== entry.exerciseId))}>Quitar</button>}
               </article>;
             })}
             <button className="secondary" onClick={() => setModal({ type: 'catalog' })}><Plus size={20} /> Agregar ejercicio</button>
@@ -394,8 +414,20 @@ export function TrainingApp({ profile, sessionReady, onAccessDenied, onLogout })
           <button className="primary" disabled={!groups.length} onClick={() => start({ groups, exercises: [] })}>Elegir ejercicios</button>
         </div>
       </Modal>}
-      {modal?.type === 'catalog' && draft && <Modal title="Agregar ejercicio" onClose={close}>
-        <CatalogPicker catalog={catalog} groups={draft.groups} selected={draft.exercises.map(entry => entry.exerciseId)} onSelect={selectExercise} onCreate={createExercise} />
+      {modal?.type === 'catalog' && draft && <Modal title={modal.replaceId ? 'Cambiar ejercicio' : 'Agregar ejercicio'} onClose={close}>
+        {modal.replacement ? <div className="stack">
+          <p>Al cambiar a {modal.replacement.name}, se quitarán las series registradas del ejercicio anterior.</p>
+          <div className="actions">
+            <button className="secondary" onClick={() => setModal({ ...modal, replacement: null })}>Cancelar</button>
+            <button className="primary" onClick={() => selectExercise(modal.replacement, true)}>Confirmar cambio</button>
+          </div>
+        </div> : <CatalogPicker catalog={catalog} groups={draft.groups} selected={draft.exercises.map(entry => entry.exerciseId)}
+          disableSelected onSelect={selectExercise} onCreate={(value, muscle) => {
+            const exercise = createExercise(value, muscle);
+            if (!exercise) return false;
+            selectExercise(exercise);
+            return true;
+          }} />}
       </Modal>}
       {editEntry && <SetEditor onClose={close} scrollAnchor={modal.anchor} existing={editEntry.sets[modal.index]} previous={editEntry.sets.at(-1) || exerciseHistory(workouts, editEntry.exerciseId)[0]?.sets[0]}
         onSave={set => saveSet(modal.id, set, modal.index)} />}
@@ -407,7 +439,8 @@ export function TrainingApp({ profile, sessionReady, onAccessDenied, onLogout })
           <button className="secondary" onClick={close}>Seguir entrenando</button>
         </div>
       </Modal>}
-      {modal?.type === 'routine' && <RoutineEditor source={modal.source} catalog={catalog} aliases={data.aliases} onClose={close} onSave={fields => saveRoutine(modal.source, fields)} />}
+      {modal?.type === 'routine' && <RoutineEditor source={modal.source} catalog={catalog} aliases={data.aliases}
+        onCreateExercise={createExercise} onClose={close} onSave={fields => saveRoutine(modal.source, fields)} />}
       {modal?.type === 'delete' && (
         <Modal title={modal.target.type === 'workout' ? '¿Eliminar entrenamiento?' : '¿Eliminar rutina?'} onClose={close}>
           <div className="stack">

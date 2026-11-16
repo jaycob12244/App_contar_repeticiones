@@ -1,4 +1,4 @@
-import React, { useLayoutEffect, useRef, useState } from 'react';
+import React, { useId, useLayoutEffect, useRef, useState } from 'react';
 import { ArrowDown, ArrowUp, Check, Plus, Search, X } from 'lucide-react';
 import { describeLoad, GROUPS, normalizeName } from './training.js';
 
@@ -71,7 +71,7 @@ export function GroupPicker({ values, onChange }) {
   );
 }
 
-export function CatalogPicker({ catalog, groups, selected, onSelect, onCreate }) {
+export function CatalogPicker({ catalog, groups, selected, onSelect, onCreate, disableSelected = false }) {
   const [allGroups, setAllGroups] = useState(false);
   const [query, setQuery] = useState('');
   const [creating, setCreating] = useState(false);
@@ -92,7 +92,8 @@ export function CatalogPicker({ catalog, groups, selected, onSelect, onCreate })
         {matches.map(exercise => {
           const inWorkout = selected.includes(exercise.id);
           return (
-            <button key={exercise.id} type="button" className="catalog-item" onClick={() => onSelect(exercise)} aria-pressed={inWorkout}>
+            <button key={exercise.id} type="button" className="catalog-item" onClick={() => onSelect(exercise)}
+              aria-pressed={inWorkout} disabled={disableSelected && inWorkout}>
               <span><strong>{exercise.name}</strong><small>{exercise.muscle}{exercise.author_name && ` · Agregado por ${exercise.author_name}`}</small></span>
               {inWorkout ? <Check size={19} /> : <Plus size={19} />}
             </button>
@@ -227,12 +228,23 @@ export function Sets({ sets, onEdit, onRemove }) {
   );
 }
 
-export function RoutineEditor({ source, catalog, aliases, onSave, onClose }) {
+export function ExerciseOrderButtons({ name, index, count, onMove }) {
+  return <>
+    <button className="icon-button" type="button" disabled={index === 0}
+      onClick={() => onMove(-1)} aria-label={`Subir ${name}`}><ArrowUp size={16} /></button>
+    <button className="icon-button" type="button" disabled={index === count - 1}
+      onClick={() => onMove(1)} aria-label={`Bajar ${name}`}><ArrowDown size={16} /></button>
+  </>;
+}
+
+export function RoutineEditor({ source, catalog, aliases, onCreateExercise, onSave, onClose }) {
+  const formId = useId();
   const [name, setName] = useState(source.name ?? '');
   const [groups, setGroups] = useState(source.groups);
   const [editableIds, setIds] = useState(source.exercises.map(item => item.exerciseId));
   const ids = [...new Set(editableIds.map(id => aliases?.[id] ?? id))];
   const nameFor = id => catalog.find(item => item.id === id)?.name || 'Ejercicio';
+  const canSave = Boolean(name.trim() && groups.length && ids.length);
 
   function move(index, delta) {
     const order = [...ids];
@@ -241,26 +253,33 @@ export function RoutineEditor({ source, catalog, aliases, onSave, onClose }) {
   }
   return (
     <Modal title={source.name ? 'Editar rutina' : 'Guardar rutina'} onClose={onClose}>
-      <form className="stack" onSubmit={event => {
-        event.preventDefault();
-        if (name.trim()) onSave({ name: name.trim(), groups, exercises: ids.map(exerciseId => ({ exerciseId })) });
-      }}>
-        <label>Nombre de la rutina<input required maxLength={100} value={name} onChange={event => setName(event.target.value)} /></label>
+      <div className="stack">
+        <form id={formId} onSubmit={event => {
+          event.preventDefault();
+          if (canSave) onSave({ name: name.trim(), groups, exercises: ids.map(exerciseId => ({ exerciseId })) });
+        }}>
+          <label>Nombre de la rutina<input required maxLength={100} value={name} onChange={event => setName(event.target.value)} /></label>
+        </form>
         <GroupPicker values={groups} onChange={setGroups} />
         <ol className="sets">
           {ids.map((id, index) => <li key={id} className="set-row routine-order">
             <span>{nameFor(id)}</span>
-            <button className="icon-button" type="button" disabled={!index} onClick={() => move(index, -1)} aria-label={`Subir ${nameFor(id)}`}><ArrowUp size={16} /></button>
-            <button className="icon-button" type="button" disabled={index === ids.length - 1} onClick={() => move(index, 1)} aria-label={`Bajar ${nameFor(id)}`}><ArrowDown size={16} /></button>
+            <ExerciseOrderButtons name={nameFor(id)} index={index} count={ids.length} onMove={delta => move(index, delta)} />
           </li>)}
         </ol>
         <details>
           <summary>Elegir ejercicios</summary>
           <CatalogPicker catalog={catalog} groups={groups} selected={ids}
+            onCreate={(value, muscle) => {
+              const exercise = onCreateExercise(value, muscle);
+              if (!exercise) return false;
+              if (!ids.includes(exercise.id)) setIds([...ids, exercise.id]);
+              return true;
+            }}
             onSelect={exercise => setIds(ids.includes(exercise.id) ? ids.filter(id => id !== exercise.id) : [...ids, exercise.id])} />
         </details>
-        <button className="primary" disabled={!name.trim() || !groups.length || !ids.length}>Guardar rutina</button>
-      </form>
+        <button className="primary" type="submit" form={formId} disabled={!canSave}>Guardar rutina</button>
+      </div>
     </Modal>
   );
 }
